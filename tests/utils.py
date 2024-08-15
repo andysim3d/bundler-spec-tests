@@ -2,9 +2,11 @@ import os
 import time
 from functools import cache
 
+from eth_utils import (
+    to_checksum_address
+)
 from eth_abi import decode
 from eth_abi.packed import encode_packed
-from eth_utils import to_checksum_address
 from solcx import compile_source
 from .types import RPCRequest, UserOperation, CommandLineArgs
 
@@ -172,10 +174,12 @@ def assert_ok(response):
         raise AttributeError(f"expected result object, got:\n{response}") from exc
 
 
-def assert_rpc_error(response, message, code):
+def assert_rpc_error(response, message, code, data=None):
     try:
         assert response.code == code
         assert message.lower() in response.message.lower()
+        if data is not None:
+            assert response.data == data
     except AttributeError as exc:
         raise AttributeError(f"expected error object, got:\n{response}") from exc
 
@@ -196,16 +200,13 @@ def deposit_to_undeployed_sender(w3, entrypoint_contract, factory, factory_data)
 
 
 def send_bundle_now(url=None):
-    try:
-        RPCRequest(method="debug_bundler_sendBundleNow").send(url)
-    except KeyError:
-        pass
+    assert_ok(RPCRequest(method="debug_bundler_sendBundleNow").send(url))
 
 
 def set_manual_bundling_mode(url=None):
-    return RPCRequest(method="debug_bundler_setBundlingMode", params=["manual"]).send(
+    assert_ok(RPCRequest(method="debug_bundler_setBundlingMode", params=["manual"]).send(
         url
-    )
+    ))
 
 
 def dump_mempool(url=None):
@@ -259,7 +260,7 @@ def dump_reputation(url=None):
 
 
 def clear_reputation(url=None):
-    return RPCRequest(method="debug_bundler_clearReputation").send(url)
+    assert_ok(RPCRequest(method="debug_bundler_clearReputation").send(url))
 
 
 def set_reputation(address, ops_seen=1, ops_included=2, url=None):

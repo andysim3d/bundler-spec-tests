@@ -1,12 +1,11 @@
 import collections
 import pytest
 
-from eth_abi.packed import encode_packed
-
 from eth_utils import to_hex
 from tests.types import UserOperation, RPCErrorCode, RPCRequest
 from tests.utils import (
     assert_ok,
+    fund,
     assert_rpc_error,
     get_stake_status,
     dump_mempool,
@@ -54,8 +53,9 @@ replace_op_cases = [
 
 
 @pytest.mark.parametrize("case", replace_op_cases, ids=lambda case: case.rule)
-def test_bundle_replace_op(w3, case):
+def test_bundle_replace_op(w3, manual_bundling_mode, case):
     wallet = deploy_wallet_contract(w3)
+    fund(w3, wallet.address)
     calldata = wallet.encodeABI(fn_name="setState", args=[1])
     new_op = UserOperation(
         sender=wallet.address,
@@ -361,7 +361,7 @@ def test_ban_user_sender_double_role_in_bundle(w3, entrypoint_contract):
         RPCErrorCode.BANNED_OPCODE,
     )
 
-    RPCRequest(method="debug_bundler_clearState").send()
+    assert_ok(RPCRequest(method="debug_bundler_clearState").send())
 
     # mempool addition order check: paymaster becomes sender
     response2 = user_op2.send()
