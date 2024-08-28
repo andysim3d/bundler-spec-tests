@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.12;
 
-import "../RIP7560TransactionType4.sol";
+import "@rip7560/contracts/interfaces/IRip7560Transaction.sol";
 
 library TestUtils {
 
@@ -12,6 +12,7 @@ library TestUtils {
 
     event Type4TransactionParamsEvent(
         address sender,
+        uint256 nonceKey,
         uint256 nonce,
         uint256 validationGasLimit,
         uint256 paymasterValidationGasLimit,
@@ -57,11 +58,12 @@ library TestUtils {
     ) internal {
         emit ValidationTransactionFunctionParams(version, txHash);
 
-        TransactionType4 memory txStruct = abi.decode(transaction, (TransactionType4));
+        RIP7560Transaction memory txStruct = abi.decode(transaction, (RIP7560Transaction));
 
         /* Emit transaction details as seen on-chain */
         emit Type4TransactionParamsEvent(
             txStruct.sender,
+            txStruct.nonceKey,
             txStruct.nonce,
             txStruct.validationGasLimit,
             txStruct.paymasterValidationGasLimit,
@@ -74,8 +76,8 @@ library TestUtils {
             txStruct.paymasterData,
             txStruct.deployer,
             txStruct.deployerData,
-            txStruct.callData,
-            txStruct.signature
+            txStruct.executionData,
+            txStruct.authorizationData
         );
     }
 

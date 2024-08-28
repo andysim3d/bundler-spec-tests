@@ -2,9 +2,7 @@ import os
 import time
 from functools import cache
 
-from eth_utils import (
-    to_checksum_address
-)
+from eth_utils import to_checksum_address
 from eth_abi import decode
 from eth_abi.packed import encode_packed
 from solcx import compile_source
@@ -20,7 +18,11 @@ def compile_contract(contract):
     contracts_dirname = current_dirname + "/contracts/" + contract_subdir + "/"
     aa_path = os.path.realpath(current_dirname + "/../@account-abstraction")
     aa_relpath = os.path.relpath(aa_path, contracts_dirname)
-    remap = "@account-abstraction=" + aa_relpath
+    rip7560_path = os.path.realpath(current_dirname + "/../@rip7560")
+    rip7560_relpath = os.path.relpath(rip7560_path, contracts_dirname)
+    allow_paths = aa_relpath + "," + rip7560_relpath
+    aa_remap = "@account-abstraction=" + aa_relpath
+    rip7560_remap = "@rip7560=" + rip7560_relpath
     with open(
         contracts_dirname + contract_name + ".sol", "r", encoding="utf-8"
     ) as contractfile:
@@ -32,8 +34,8 @@ def compile_contract(contract):
             # todo: only do it for 7560 folder
             include_path=os.path.abspath(os.path.join(contracts_dirname, os.pardir))
             + "/",
-            allow_paths=aa_relpath,
-            import_remappings=remap,
+            allow_paths=allow_paths,
+            import_remappings=[aa_remap, rip7560_remap],
             output_values=["abi", "bin"],
             solc_version="0.8.25",
             evm_version="cancun",
@@ -204,9 +206,9 @@ def send_bundle_now(url=None):
 
 
 def set_manual_bundling_mode(url=None):
-    assert_ok(RPCRequest(method="debug_bundler_setBundlingMode", params=["manual"]).send(
-        url
-    ))
+    assert_ok(
+        RPCRequest(method="debug_bundler_setBundlingMode", params=["manual"]).send(url)
+    )
 
 
 def dump_mempool(url=None):

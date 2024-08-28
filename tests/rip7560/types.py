@@ -10,15 +10,16 @@ from tests.types import RPCRequest
 class TransactionRIP7560:
     # pylint: disable=too-many-instance-attributes, invalid-name
     sender: HexStr
+    nonceKey: HexStr = hex(0)
     nonce: HexStr = hex(0)
     factory: HexStr = "0x0000000000000000000000000000000000000000"
     factoryData: HexStr = "0x"
-    callData: HexStr = "0x"
+    executionData: HexStr = "0x"
     callGasLimit: HexStr = hex(3 * 10**5)
     verificationGasLimit: HexStr = hex(10**6)
     maxFeePerGas: HexStr = hex(4 * 10**9)
     maxPriorityFeePerGas: HexStr = hex(3 * 10**9)
-    signature: HexStr = "0x"
+    authorizationData: HexStr = "0x"
     paymaster: HexStr = "0x0000000000000000000000000000000000000000"
     paymasterData: HexStr = "0x"
     paymasterVerificationGasLimit: HexStr = hex(0)
@@ -58,7 +59,9 @@ class TransactionRIP7560:
         return self
 
     def send(self, url=None):
-        return RPCRequest(method="eth_sendTransaction", params=[remove_nulls(asdict(self.cleanup()))]).send(url)
+        return RPCRequest(
+            method="eth_sendTransaction", params=[remove_nulls(asdict(self.cleanup()))]
+        ).send(url)
 
 
 def remove_nulls(obj):

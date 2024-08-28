@@ -48,7 +48,7 @@ jobs:
           command: "pdm run lint"
       - run:
           name: "clone bundler"
-          command: ./scripts/clone-helper main https://github.com/eth-infinitism/bundler.git
+          command: ./scripts/clone-helper master https://github.com/eth-infinitism/bundler.git
       - restore_cache:
           keys:
             - dependency-cache-yarn-{{ checksum "./bundler/yarn.lock" }}
@@ -119,7 +119,9 @@ jobs:
       - run:
           name: "lint"
           command: "pdm run lint"
-
+      - run:
+          name: "format check"
+          command: "pdm run format --check"
       - run:
           name: "clone go-ethereum from infinitism"
           command: ./scripts/clone-helper RIP-7560-revision-2 https://github.com/eth-infinitism/go-ethereum.git
@@ -147,7 +149,7 @@ jobs:
           background: true
       - run:
           name: "clone bundler"
-          command: ./scripts/clone-helper main https://github.com/eth-infinitism/bundler.git
+          command: ./scripts/clone-helper master https://github.com/eth-infinitism/bundler.git
       - restore_cache:
           keys:
             - dependency-cache-yarn-{{ checksum "./bundler/yarn.lock" }}
@@ -155,10 +157,6 @@ jobs:
           name: "yarn install for bundler"
           working_directory: "./bundler"
           command: yarn install --ignore-engines && yarn preprocess
-      - run:
-          name: "deploy entry point"
-          working_directory: "./bundler"
-          command: yarn hardhat-deploy --network localhost
       - run:
           name: "run bundler"
           working_directory: "./bundler"
