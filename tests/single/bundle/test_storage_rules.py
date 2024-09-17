@@ -154,14 +154,16 @@ cases = [
         build_userop_for_paymaster,
         assert_ok,
     ),
-    StorageTestCase(
-        "STO-022",
-        "account_reference_storage_init_code",
-        UNSTAKED,
-        PAYMASTER,
-        with_initcode(build_userop_for_paymaster),
-        assert_error,
-    ),
+
+  # This test case is diverged with v0.7 EP.  
+  # StorageTestCase(
+  #      "STO-022",
+  #      "account_reference_storage_init_code",
+  #      UNSTAKED,
+  #      PAYMASTER,
+  #      with_initcode(build_userop_for_paymaster),
+  #      assert_error,
+  #  ),
     StorageTestCase(
         "EREP-050",
         "context",
