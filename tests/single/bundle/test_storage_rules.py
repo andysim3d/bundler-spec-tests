@@ -155,15 +155,14 @@ cases = [
         assert_ok,
     ),
 
-  # This test case is diverged with v0.7 EP.  
-  # StorageTestCase(
-  #      "STO-022",
-  #      "account_reference_storage_init_code",
-  #      UNSTAKED,
-  #      PAYMASTER,
-  #      with_initcode(build_userop_for_paymaster),
-  #      assert_error,
-  #  ),
+   StorageTestCase(
+        "STO-022",
+        "account_reference_storage_init_code",
+        UNSTAKED,
+        PAYMASTER,
+        with_initcode(build_userop_for_paymaster),
+        assert_error,
+    ),
     StorageTestCase(
         "EREP-050",
         "context",
@@ -549,14 +548,15 @@ cases = [
         with_initcode(build_userop_for_sender, deploy_staked_rule_factory),
         assert_ok,
     ),
-    StorageTestCase(
-        "STO-022",
-        "account_reference_storage_init_code",
-        UNSTAKED,
-        PAYMASTER,
-        with_initcode(build_userop_for_paymaster, deploy_staked_rule_factory),
-        assert_ok,
-    ),
+    # This test case is diverged with v0.7 EP.  
+    #StorageTestCase(
+    #    "STO-022",
+    #    "account_reference_storage_init_code",
+    #    UNSTAKED,
+    #    PAYMASTER,
+    #    with_initcode(build_userop_for_paymaster, deploy_staked_rule_factory),
+    #    assert_ok,
+    #),
     StorageTestCase(
         "STO-021",
         "account_reference_storage_struct",
