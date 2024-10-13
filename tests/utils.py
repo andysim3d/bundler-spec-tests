@@ -6,6 +6,8 @@ from eth_utils import to_checksum_address
 from eth_abi import decode
 from eth_abi.packed import encode_packed
 from solcx import compile_source
+
+from .rip7560.types import TransactionRIP7560
 from .types import RPCRequest, UserOperation, CommandLineArgs
 
 
@@ -46,13 +48,23 @@ def compile_contract(contract):
 
 # pylint: disable=too-many-arguments
 def deploy_contract(
-    w3, contractname, ctrparams=None, value=0, gas=10 * 10**6, gas_price=10**9
+    w3,
+    contractname,
+    ctrparams=None,
+    value=0,
+    gas=10 * 10**6,
+    gas_price=10**9,
+    account=None,
 ):
     if ctrparams is None:
         ctrparams = []
     interface = compile_contract(contractname)
-    contract = w3.eth.contract(abi=interface["abi"], bytecode=interface["bin"])
-    account = w3.eth.accounts[0]
+    contract = w3.eth.contract(
+        abi=interface["abi"],
+        bytecode=interface["bin"],
+    )
+    if account is None:
+        account = w3.eth.default_account
     tx_hash = contract.constructor(*ctrparams).transact(
         {
             "gas": gas,
@@ -88,14 +100,14 @@ def deploy_and_deposit(
 
 def fund(w3, addr, value=10**18):
     tx_hash = w3.eth.send_transaction(
-        {"from": w3.eth.accounts[0], "to": addr, "value": value}
+        {"from": w3.eth.default_account, "to": addr, "value": value}
     )
     w3.eth.wait_for_transaction_receipt(tx_hash)
 
 
 def staked_contract(w3, entrypoint_contract, contract):
     tx_hash = contract.functions.addStake(entrypoint_contract.address, 2).transact(
-        {"from": w3.eth.accounts[0], "value": 1 * 10**18}
+        {"from": w3.eth.default_account, "value": 1 * 10**18}
     )
     assert int(tx_hash.hex(), 16), "could not stake contract"
     w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -195,7 +207,7 @@ def get_sender_address(w3, factory, factory_data):
 def deposit_to_undeployed_sender(w3, entrypoint_contract, factory, factory_data):
     sender = get_sender_address(w3, factory, factory_data)
     tx_hash = entrypoint_contract.functions.depositTo(sender).transact(
-        {"value": 10**18, "from": w3.eth.accounts[0]}
+        {"value": 10**18, "from": w3.eth.default_account}
     )
     w3.eth.wait_for_transaction_receipt(tx_hash)
     return sender
@@ -211,6 +223,12 @@ def set_manual_bundling_mode(url=None):
     )
 
 
+def get_rip7560_debug_info(tx_hash, url=None):
+    return RPCRequest(
+        method="eth_getRip7560TransactionDebugInfo", params=[tx_hash]
+    ).send(url)
+
+
 def dump_mempool(url=None):
     mempool = (
         RPCRequest(
@@ -220,7 +238,10 @@ def dump_mempool(url=None):
         .result
     )
     for i, entry in enumerate(mempool):
-        mempool[i] = UserOperation(**entry)
+        if "executionData" in entry:
+            mempool[i] = TransactionRIP7560(**entry)
+        else:
+            mempool[i] = UserOperation(**entry)
     return mempool
 
 
@@ -307,3 +328,21 @@ def get_userop_max_cost(user_op):
         user_op.paymasterVerificationGasLimit,
         user_op.paymasterPostOpGasLimit,
     ) * to_number(user_op.maxFeePerGas)
+
+
+def get_rip7560_tx_max_cost(tx):
+    tx_max_gas_limit = sum_hex(
+        15000,
+        tx.verificationGasLimit,
+        tx.callGasLimit,
+        tx.paymasterVerificationGasLimit,
+        tx.paymasterPostOpGasLimit,
+    )
+    max_cost = tx_max_gas_limit * to_number(tx.maxFeePerGas)
+    print(
+        "get_rip7560_tx_max_cost",
+        tx_max_gas_limit,
+        to_number(tx.maxFeePerGas),
+        max_cost,
+    )
+    return max_cost

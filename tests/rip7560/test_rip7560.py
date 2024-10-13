@@ -1,7 +1,10 @@
 import hexbytes
 import pytest
+from eth_utils import event_abi_to_log_topic
+from web3._utils.encoding import hex_encode_abi_type
 from web3.constants import ADDRESS_ZERO
 
+from tests.rip7560.test_send_failed import encode_solidity_error
 from tests.single.opbanning.test_op_banning import banned_opcodes
 from tests.types import RPCErrorCode
 from tests.rip7560.types import TransactionRIP7560
@@ -12,8 +15,9 @@ from tests.utils import (
     fund,
     send_bundle_now,
     to_prefixed_hex,
-    deploy_contract,
     compile_contract,
+    deploy_contract,
+    dump_mempool,
 )
 
 
@@ -38,6 +42,224 @@ def test_eth_sendTransaction7560_valid1(w3, wallet_contract, tx_7560):
     w3.eth.get_transaction(rethash)
 
 
+# pylint: disable=unused-argument
+def test_eth_send_3_valid_ops(w3, tx_7560, manual_bundling_mode):
+    # state_before = wallet_contract.functions.state().call()
+    # assert state_before == 0
+    # calldata = wallet_contract.encode_abi(abi_element_identifier="anyExecutionFunction")
+    count = 3
+    wallets = []
+    for i in range(count):
+        wallets.append(deploy_contract(w3, "rip7560/TestAccount", value=10**18))
+
+    hashes = []
+    for i in range(count):
+        wallet = wallets[i]
+        new_op = TransactionRIP7560(
+            sender=wallet.address,
+            nonce="0x1",
+            executionData="0x",
+            callGasLimit=tx_7560.callGasLimit,
+            maxPriorityFeePerGas=tx_7560.maxPriorityFeePerGas,
+            maxFeePerGas=tx_7560.maxFeePerGas,
+        )
+        res = new_op.send()
+        hashes.append(res.result)
+        assert_ok(res)
+
+    assert len(dump_mempool()) == count
+
+    send_bundle_now()
+    assert dump_mempool() == []
+    block = w3.eth.get_block("latest")
+    txlen = len(block.transactions)
+    assert txlen >= count
+    tot = 0
+    for i in range(txlen):
+        if i < count:
+            assert hashes[i] == "0x" + block.transactions[i].hex()
+        rcpt = w3.eth.get_transaction_receipt(block.transactions[i])
+        assert rcpt.status == 1
+        assert rcpt.blockHash == block.hash
+        if rcpt.type == 4:
+            assert rcpt.gasUsed == 96183
+        else:
+            assert rcpt.gasUsed == 21000
+
+        tot += rcpt.gasUsed
+        assert rcpt.cumulativeGasUsed == tot
+
+        print(
+            "index",
+            rcpt.transactionIndex,
+            "type",
+            rcpt.type,
+            "\tgasUsed:",
+            rcpt.gasUsed,
+            "\tcumulativeGasUsed",
+            rcpt.cumulativeGasUsed,
+        )
+
+
+def test_system_event_success(
+    w3,
+    wallet_contract,
+    entry_point_rip7560,
+    factory_contract_7560,
+    paymaster_contract_7560,
+):
+    paymaster = paymaster_contract_7560.address
+    factory = factory_contract_7560.address
+    factory_data = factory_contract_7560.functions.createAccount(
+        ADDRESS_ZERO, 123, ""
+    ).build_transaction({"gas": 1000000})["data"]
+    new_sender_address = factory_contract_7560.functions.getCreate2Address(
+        ADDRESS_ZERO, 123, ""
+    ).call()
+    sender = new_sender_address
+    nonce = hex(0)
+    # pylint: disable=duplicate-code
+    tx_7560 = TransactionRIP7560(
+        sender=sender,
+        paymaster=paymaster,
+        factory=factory,
+        factoryData=factory_data,
+        nonceKey=hex(0),
+        nonce=nonce,
+        maxFeePerGas=hex(100000000000),
+        maxPriorityFeePerGas=hex(100000000000),
+        verificationGasLimit=hex(2000000),
+        executionData=wallet_contract.encode_abi(
+            abi_element_identifier="anyExecutionFunction"
+        ),
+        authorizationData="0xface",
+    )
+    res = tx_7560.send()
+    send_bundle_now()
+    receipt = w3.eth.get_transaction_receipt(res.result)
+
+    system_event_args, account_deployed_event_args, _, _ = get_system_events(
+        entry_point_rip7560
+    )
+
+    system_event_topics = list(
+        filter(
+            lambda x: x.address == "0x0000000000000000000000000000000000007560",
+            receipt.logs,
+        )
+    )[0].topics
+
+    assert system_event_args == {
+        "sender": new_sender_address,
+        "paymaster": paymaster_contract_7560.address,
+        "nonceKey": 0,
+        "nonceSequence": 0,
+        "executionStatus": 0,
+    }
+    assert account_deployed_event_args == {
+        "sender": new_sender_address,
+        "paymaster": paymaster_contract_7560.address,
+        "deployer": factory_contract_7560.address,
+    }
+    assert system_event_topics == [
+        # pylint: disable=protected-access
+        event_abi_to_log_topic(
+            entry_point_rip7560.events.RIP7560TransactionEvent()._get_event_abi()
+        ),
+        hexbytes.HexBytes(hex_encode_abi_type("address", new_sender_address, 256)),
+        hexbytes.HexBytes(
+            hex_encode_abi_type("address", paymaster_contract_7560.address, 256)
+        ),
+    ]
+
+
+def test_system_event_revert_execution(
+    w3, entry_point_rip7560, wallet_contract, tx_7560
+):
+    tx_7560.executionData = wallet_contract.encode_abi(
+        abi_element_identifier="revertingFunction"
+    )
+
+    tx_7560.send()
+    send_bundle_now()
+
+    system_event_args, _, execution_revert_event_args, _ = get_system_events(
+        entry_point_rip7560
+    )
+
+    expected_revert_reason = bytes.fromhex(encode_solidity_error(w3, "reverting")[2:])
+    assert execution_revert_event_args == {
+        "sender": wallet_contract.address,
+        "nonceKey": 0,
+        "nonceSequence": 1,
+        "revertReason": expected_revert_reason,
+    }
+    assert system_event_args == {
+        "sender": wallet_contract.address,
+        "paymaster": "0x0000000000000000000000000000000000000000",
+        "nonceKey": 0,
+        "nonceSequence": 1,
+        "executionStatus": 1,
+    }
+
+
+def test_system_event_revert_post_op(w3, entry_point_rip7560, wallet_contract, tx_7560):
+    paymaster = deploy_contract(w3, "rip7560/TestPostOpPaymaster", value=10**18)
+    tx_7560.paymaster = paymaster.address
+    tx_7560.authorizationData = to_prefixed_hex("revert")
+
+    tx_7560.send()
+    send_bundle_now()
+
+    system_event_args, _, _, post_op_revert_event_args = get_system_events(
+        entry_point_rip7560
+    )
+    expected_revert_reason = bytes.fromhex(
+        encode_solidity_error(w3, "post op revert message")[2:]
+    )
+    assert post_op_revert_event_args == {
+        "sender": wallet_contract.address,
+        "paymaster": paymaster.address,
+        "nonceKey": 0,
+        "nonceSequence": 1,
+        "revertReason": expected_revert_reason,
+    }
+    assert system_event_args == {
+        "sender": wallet_contract.address,
+        "paymaster": paymaster.address,
+        "nonceKey": 0,
+        "nonceSequence": 1,
+        "executionStatus": 2,
+    }
+
+
+def get_system_events(entry_point_rip7560):
+    system_event_args = dict(
+        entry_point_rip7560.events.RIP7560TransactionEvent().get_logs()[0].args
+    )
+
+    account_deployed_event_args = None
+    logs = entry_point_rip7560.events.RIP7560AccountDeployed().get_logs()
+    if len(logs) > 0:
+        account_deployed_event_args = dict(logs[0].args)
+
+    execution_revert_event_args = None
+    logs = entry_point_rip7560.events.RIP7560TransactionRevertReason().get_logs()
+    if len(logs) > 0:
+        execution_revert_event_args = dict(logs[0].args)
+
+    post_op_revert_event_args = None
+    logs = entry_point_rip7560.events.RIP7560TransactionPostOpRevertReason().get_logs()
+    if len(logs) > 0:
+        post_op_revert_event_args = dict(logs[0].args)
+    return (
+        system_event_args,
+        account_deployed_event_args,
+        execution_revert_event_args,
+        post_op_revert_event_args,
+    )
+
+
 def test_eth_sendTransaction7560_valid_with_paymaster_no_postop(
     w3, wallet_contract, tx_7560
 ):
@@ -49,7 +271,9 @@ def test_eth_sendTransaction7560_valid_with_paymaster_no_postop(
     assert state_before == 0
     tx_7560.paymaster = paymaster.address
     tx_7560.authorizationData = to_prefixed_hex("no context")
-    tx_7560.executionData = wallet_contract.encodeABI(fn_name="anyExecutionFunction")
+    tx_7560.executionData = wallet_contract.encode_abi(
+        abi_element_identifier="anyExecutionFunction"
+    )
     res = tx_7560.send()
     assert_ok(res)
     send_bundle_now()
@@ -69,7 +293,9 @@ def test_eth_sendTransaction7560_valid_with_paymaster_postop(
     assert counter_before == 0
     assert state_before == 0
     tx_7560.paymaster = paymaster.address
-    tx_7560.executionData = wallet_contract.encodeABI(fn_name="anyExecutionFunction")
+    tx_7560.executionData = wallet_contract.encode_abi(
+        abi_element_identifier="anyExecutionFunction"
+    )
     res = tx_7560.send()
     assert_ok(res)
     send_bundle_now()
@@ -89,7 +315,9 @@ def test_eth_sendTransaction7560_valid_with_paymaster_postop_revert(
     assert counter_before == 0
     assert state_before == 0
     tx_7560.paymaster = paymaster.address
-    tx_7560.executionData = wallet_contract.encodeABI(fn_name="anyExecutionFunction")
+    tx_7560.executionData = wallet_contract.encode_abi(
+        abi_element_identifier="anyExecutionFunction"
+    )
     tx_7560.authorizationData = to_prefixed_hex("revert")
     res = tx_7560.send()
     assert_ok(res)
@@ -248,11 +476,15 @@ def test_bundle_with_events(w3, wallet_contract):
             maxFeePerGas=hex(1000_000_000),
             maxPriorityFeePerGas=hex(1000000),
             verificationGasLimit=hex(3000000),
-            executionData=wallet_contract.encodeABI(fn_name="anyExecutionFunction"),
+            executionData=wallet_contract.encode_abi(
+                abi_element_identifier="anyExecutionFunction"
+            ),
         )
         # force the last tx to fail
         if i == 2:
-            tx.executionData = wallet_contract.encodeABI(fn_name="revertingFunction")
+            tx.executionData = wallet_contract.encode_abi(
+                abi_element_identifier="revertingFunction"
+            )
         txs.append(tx)
         ret = tx.send()
         hashes.append(ret)
@@ -296,7 +528,8 @@ def test_bundle_with_events(w3, wallet_contract):
             if log == "reverted":
                 continue
             # print("checking log ", index, " for tx ", i)
-            assert log.logIndex == 1 + i * 4 + index
+            events_per_tx = 6
+            assert log.logIndex == 1 + i * events_per_tx + index
             assert log.address == txs[i].sender
 
 

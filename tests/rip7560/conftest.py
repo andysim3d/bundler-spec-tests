@@ -6,7 +6,10 @@ import pytest
 
 from tests.rip7560.types import TransactionRIP7560
 from tests.types import CommandLineArgs
-from tests.utils import deploy_contract
+from tests.utils import (
+    deploy_contract,
+    compile_contract,
+)
 
 
 @pytest.fixture
@@ -51,7 +54,7 @@ def wallet_contract_rules(w3):
     )
     time.sleep(0.1)
     w3.eth.send_transaction(
-        {"from": w3.eth.accounts[0], "to": contract.address, "value": 10**18}
+        {"from": w3.eth.default_account, "to": contract.address, "value": 10**18}
     )
     return contract
 
@@ -65,9 +68,23 @@ def tx_7560(wallet_contract):
         maxFeePerGas=hex(100000000000),
         maxPriorityFeePerGas=hex(100000000000),
         verificationGasLimit=hex(2000000),
-        executionData=wallet_contract.encodeABI(fn_name="anyExecutionFunction"),
+        executionData=wallet_contract.encode_abi(
+            abi_element_identifier="anyExecutionFunction"
+        ),
         authorizationData="0xface",
     )
+
+
+@pytest.fixture(scope="session")
+def entry_point_rip7560(w3):
+    entry_point_interface = compile_contract(
+        "../../@rip7560/contracts/interfaces/IRip7560EntryPoint"
+    )
+    entry_point = w3.eth.contract(
+        abi=entry_point_interface["abi"],
+        address="0x0000000000000000000000000000000000007560",
+    )
+    return entry_point
 
 
 @pytest.fixture(scope="session")
